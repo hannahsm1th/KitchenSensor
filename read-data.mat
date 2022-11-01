@@ -1,0 +1,122 @@
+% This code reads the data from the kitchen sensors. At 8pm every day it
+% reports on kitchen visits and whether there were any spikes in the
+% temperature.
+
+% Store the channel ID
+sensorDataChannelID = 1145985;
+motionDataChannelID = 1147888;
+
+% Provide the ThingSpeak alerts API key.
+alertApiKey = 'TAKT7Q6Q12RCP68CCA96C';
+
+% Set the address for the HTTTP call
+alertUrl="https://api.thingspeak.com/alerts/send";
+
+% webwrite uses weboptions to add required headers.  Alerts needs a 
+% ThingSpeak-Alerts-API-Key header.
+options = weboptions("HeaderFields", ["ThingSpeak-Alerts-API-Key", alertApiKey ]);
+
+% Set the email subject.
+alertSubject = sprintf("Daily Kitchen Report");
+
+% Read the recent data.
+[temp, time1] = thingSpeakRead(sensorDataChannelID,'Fields', 1,'Numdays',1);
+[motion, time2] = thingSpeakRead(motionDataChannelID,'Fields', 1,'Numdays',1);
+
+% Create an array to store the information about when the temperature spikes indicating the kitchen is being used.
+spikeTimes = [];
+
+% Loops through the readings of temperature and looks for a jump in 3 degrees over five minutes
+spikeDetected = false; %This is set as false until we detect a jump in temp
+for i = 1:1:(length(temp)-15)
+    baseTemp = temp(i); %Baseline to compare it with the readings 5 minutes later
+    counter = 0;
+    sum = 0;
+    if spikeDetected == false
+        if ~(isnan(temp(i+13)))
+            sum = sum + temp(i+13);
+            counter = counter + 1;
+        end
+        if ~(isnan(temp(i+14)))
+            sum = sum + temp(i+14);
+            counter = counter + 1;
+        end
+        if ~(isnan(temp(i+15)))
+            sum = sum + temp(i+15);
+            counter = counter + 1;
+        end
+        averageTemp = sum / counter;
+        if (averageTemp - baseTemp) >= 3
+            spikeTimes = cat(1,spikeTimes,time1(i));
+            spikeDetected = true; %If we find a jump in temperature, set to true
+        end
+    else %spikeDetected remains true until there is a drop of 1 degree detected
+        if ~(isnan(temp(i+13)))
+            sum = sum + temp(i+13);
+            counter = counter + 1;
+        end
+        if ~(isnan(temp(i+14)))
+            sum = sum + temp(i+14);
+            counter = counter + 1;
+        end
+        if ~(isnan(temp(i+15)))
+            sum = sum + temp(i+15);
+            counter = counter + 1;
+        end
+        averageTemp = sum / counter;
+        if (baseTemp - averageTemp) >= 1
+            spikeDetected = false;
+        end
+    end
+end
+
+% Create an array to check how often the kitchen was visited. This could indicate shorter visits like to snack or wash up. It reads every 5 minutes
+motionSpikes = [];
+motionDetected = false;
+for i = 1:1:length(motion)
+    if motionDetected == false
+        if motion(i) >= 0.2
+            motionSpikes = cat(1, motionSpikes, time2(i));
+            motionDetected = true;
+        end
+    else
+        if motion(i) == 0
+            motionDetected = false;
+        end
+    end
+end
+
+% Check to make sure the data was read correctly from the channel.
+Date = today('datetime');
+DateString = string(Date);
+alertBody = 'Hi Customer!\n\n    Here is the report on kitchen usage for ';
+alertBody = alertBody + DateString;
+if isempty(spikeTimes) && isempty(motionSpikes)
+    alertBody = alertBody +'\n    No data from the kitchen. Please check your device';
+end
+if ~(isempty(motionSpikes))
+    alertBody = alertBody + '\n    The kitchen was visited at the following times: \n';
+    for i = 1:length(motionSpikes)
+        alertBody = alertBody + '\n    Visit ' + string(i) + ': ';
+        alertBody = alertBody + string(motionSpikes(i));
+    end
+end
+if isempty(spikeTimes)
+    alertBody = alertBody + '\n    The kitchen was not used for cooking today.';
+else
+    alertBody = alertBody + '\n\n    The kitchen was used for cooking at the following times: \n';
+    for i = 1: length(spikeTimes)
+        alertBody = alertBody + '\n    Cooking session ' + string(i) + ': ';
+        alertBody = alertBody + string(spikeTimes(i));
+    end
+    alertBody = alertBody + '\n\nThank you for using KitchenTrack!';
+end
+alertBody = compose(alertBody);
+disp(alertBody);
+ 
+ % Catch errors so the MATLAB code does not disable a TimeControl if it fails
+try
+    webwrite(alertUrl , "body", alertBody, "subject", alertSubject, options);
+catch someException
+    fprintf("Failed to send alert: %s\n", someException.message);
+end

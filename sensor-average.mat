@@ -1,0 +1,47 @@
+% This code takes readings from the motion sensor every minute and
+% averages them, to be used for detecting kitchen use.
+
+% Store the channel IDs
+readChannelID = 1145985;
+writeChannelID = 1147888;
+
+% Provide the write API key.
+writeKey = 'GIN15GMFJMR8VYZE';
+
+% Reads the latest 30 readings from the motion data. The data is read
+% every 20 seconds so this will constitute 10 minutes. This script
+% is triggered to run every 10 minutes
+[motion, time] = thingSpeakRead(readChannelID,'Fields',3,'Numpoints',30);
+
+% Divides the data into arrays for each minute
+motion1 = motion(1:6);
+motion2 = motion(7:12);
+motion3 = motion(13:18);
+motion4 = motion(19:24);
+motion5 = motion(25:30);
+
+%stripping any NaN values that will break the code
+motion1 = motion1';
+motion1 = motion1(~isnan(motion1))';
+motion2 = motion2';
+motion2 = motion2(~isnan(motion2))';
+motion3 = motion3';
+motion3 = motion3(~isnan(motion3))';
+motion4 = motion4';
+motion4 = motion4(~isnan(motion4))';
+motion5 = motion5';
+motion6 = motion5(~isnan(motion5))';
+
+% Calculate the average motion for each minute
+avgMotion1 = mean(motion1);
+avgMotion2 = mean(motion2);
+avgMotion3 = mean(motion3);
+avgMotion4 = mean(motion4);
+avgMotion5 = mean(motion5);
+
+%Creating arrays with the average motion for each minute and a timestamp
+a = [avgMotion1; avgMotion2; avgMotion3; avgMotion4; avgMotion5];
+t = time([1,7,13,19,25]);
+
+% Write the average to the channel
+thingSpeakWrite(writeChannelID,'Values',a,'writekey', writeKey, 'TimeStamps',t);
